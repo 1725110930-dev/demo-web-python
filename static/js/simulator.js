@@ -15,7 +15,6 @@
   const DESIGN = Object.freeze({ width: 1200, height: 800 });
   const GROUND_Y = 690;
   const PHYSICS_STEP = 1000 / 60;
-  const GRAVITY_PER_STEP = 0.001 * PHYSICS_STEP * PHYSICS_STEP;
 
   const ASSET_PATHS = Object.freeze({
     wheels: '/static/img/wheels.png',
@@ -30,11 +29,11 @@
    * eje de giro quede justo encima del centro de la cureña.
    */
   const CANNON = Object.freeze({
-    scale: 0.48,
-    baseX: 60,
-    baseY: 228.5,
-    barrelX: 162,
-    barrelY: 228.5,
+    scale: 0.32,
+    baseX: 66,
+    baseY: 372.68,
+    barrelX: 134,
+    barrelY: 372.68,
     pivot: { x: 300, y: 476 },
     muzzle: { x: 1060, y: 220 },
     minElevation: 5,
@@ -54,8 +53,8 @@
 
   const PROJECTILE = Object.freeze({
     speed: 12.5,
-    radius: 18,
-    spriteScale: 0.05,
+    radius: 22,
+    spriteScale: 0.06,
     life: 8,
     maxActive: 4,
     cooldown: 280,
@@ -63,13 +62,8 @@
   });
 
   const COLORS = Object.freeze({
-    ink: 0x07111f,
-    panel: 0x071628,
     cyan: 0x38bdf8,
-    gold: 0xfbbf24,
-    tomato: 0xef4444,
     success: 0x86efac,
-    danger: 0xff8a80,
     white: 0xf8fafc,
   });
 
@@ -79,20 +73,15 @@
     shots: 0,
     elevation: CANNON.defaultElevation,
     pointer: { x: DESIGN.width * 0.78, y: 350 },
-    pointerActive: false,
     touchAiming: false,
     projectiles: [],
-    particles: [],
     pendingRemovals: [],
     acc: 0,
-    elapsed: 0,
     cooldownUntil: 0,
     targetRespawnAt: 0,
     targetMove: null,
     targetFlash: 0,
     targetPulse: 0,
-    messageTime: 0,
-    nextMissMessage: 0,
   };
 
   let app;
@@ -105,12 +94,8 @@
   let barrelSprite;
   let targetGroup;
   let targetSprite;
-  let targetGlow;
-  let targetStand;
   let targetBody;
-  let aimGraphics;
   let projectileLayer;
-  let particleLayer;
   let uiLayer;
   let groundBody;
   let textures;
@@ -127,41 +112,6 @@
 
   function currentTime() {
     return performance.now();
-  }
-
-  function mixColor(colorA, colorB, t) {
-    const ar = (colorA >> 16) & 0xff;
-    const ag = (colorA >> 8) & 0xff;
-    const ab = colorA & 0xff;
-    const br = (colorB >> 16) & 0xff;
-    const bg = (colorB >> 8) & 0xff;
-    const bb = colorB & 0xff;
-    const r = Math.round(ar + (br - ar) * t);
-    const g = Math.round(ag + (bg - ag) * t);
-    const b = Math.round(ab + (bb - ab) * t);
-    return (r << 16) | (g << 8) | b;
-  }
-
-  function sampleGradient(stops, t) {
-    for (let i = 0; i < stops.length - 1; i += 1) {
-      const from = stops[i];
-      const to = stops[i + 1];
-      if (t >= from.at && t <= to.at) {
-        const local = (t - from.at) / Math.max(0.0001, to.at - from.at);
-        return mixColor(from.color, to.color, local);
-      }
-    }
-    return stops[stops.length - 1].color;
-  }
-
-  function fillVerticalGradient(graphics, x, y, width, height, stops) {
-    const bands = 52;
-    for (let i = 0; i < bands; i += 1) {
-      const t = i / (bands - 1);
-      const bandHeight = Math.ceil(height / bands) + 1;
-      graphics.rect(x, y + (height * i) / bands, width, bandHeight);
-      graphics.fill(sampleGradient(stops, t));
-    }
   }
 
   function makeText(text, options = {}) {
@@ -236,162 +186,6 @@
     Events.on(engine, 'collisionStart', handleCollisions);
   }
 
-  function createBackground() {
-    const layer = new PIXI.Container();
-    scene.addChild(layer);
-
-    const sky = new PIXI.Graphics();
-    fillVerticalGradient(sky, 0, 0, DESIGN.width, GROUND_Y, [
-      { at: 0, color: 0x07111f },
-      { at: 0.38, color: 0x123b69 },
-      { at: 0.7, color: 0x2a7bc4 },
-      { at: 1, color: 0x9fd8f5 },
-    ]);
-    layer.addChild(sky);
-
-    const glow = new PIXI.Graphics();
-    glow.circle(1010, 150, 180).fill({ color: 0xffe8a3, alpha: 0.055 });
-    glow.circle(1010, 150, 125).fill({ color: 0xffe8a3, alpha: 0.08 });
-    glow.circle(1010, 150, 82).fill({ color: 0xfff3c4, alpha: 0.13 });
-    glow.circle(1010, 150, 48).fill({ color: 0xfffbeb, alpha: 0.95 });
-    layer.addChild(glow);
-
-    const clouds = new PIXI.Graphics();
-    const cloud = (x, y, size, alpha) => {
-      clouds.ellipse(x, y, 72 * size, 26 * size).fill({ color: 0xffffff, alpha });
-      clouds.ellipse(x - 50 * size, y + 5 * size, 42 * size, 21 * size).fill({ color: 0xffffff, alpha });
-      clouds.ellipse(x + 48 * size, y + 8 * size, 50 * size, 20 * size).fill({ color: 0xffffff, alpha });
-      clouds.ellipse(x + 8 * size, y - 17 * size, 46 * size, 27 * size).fill({ color: 0xffffff, alpha });
-    };
-    cloud(180, 135, 1.15, 0.1);
-    cloud(520, 96, 0.82, 0.075);
-    cloud(820, 195, 0.95, 0.085);
-    cloud(1090, 70, 0.65, 0.065);
-    layer.addChild(clouds);
-
-    const mountainsBack = new PIXI.Graphics();
-    mountainsBack.poly([
-      -80, GROUND_Y,
-      -80, 555,
-      95, 430,
-      250, 565,
-      390, 455,
-      545, 590,
-      720, 465,
-      910, 580,
-      1070, 445,
-      1280, 585,
-      1280, GROUND_Y,
-    ]).fill({ color: 0x183a59, alpha: 0.85 });
-    layer.addChild(mountainsBack);
-
-    const mountainsFront = new PIXI.Graphics();
-    mountainsFront.poly([
-      -80, GROUND_Y,
-      -80, 620,
-      150, 520,
-      330, 635,
-      500, 535,
-      690, 650,
-      850, 545,
-      1030, 650,
-      1190, 535,
-      1280, 610,
-      1280, GROUND_Y,
-    ]).fill({ color: 0x14533f, alpha: 0.9 });
-    layer.addChild(mountainsFront);
-
-    const haze = new PIXI.Graphics();
-    haze.rect(0, GROUND_Y - 35, DESIGN.width, 35).fill({ color: 0xbce7f7, alpha: 0.12 });
-    layer.addChild(haze);
-  }
-
-  function createGround() {
-    const layer = new PIXI.Container();
-    scene.addChild(layer);
-
-    const dirt = new PIXI.Graphics();
-    fillVerticalGradient(dirt, 0, GROUND_Y, DESIGN.width, DESIGN.height - GROUND_Y, [
-      { at: 0, color: 0x315127 },
-      { at: 0.12, color: 0x4c6b2d },
-      { at: 0.3, color: 0x5a3b23 },
-      { at: 1, color: 0x2b1a10 },
-    ]);
-    layer.addChild(dirt);
-
-    const grass = new PIXI.Graphics();
-    grass.rect(0, GROUND_Y, DESIGN.width, 15).fill(0x2f8f46);
-    grass.rect(0, GROUND_Y + 15, DESIGN.width, 6).fill({ color: 0x1d6b33, alpha: 0.9 });
-    layer.addChild(grass);
-
-    const texture = new PIXI.Graphics();
-    for (let i = 0; i < 58; i += 1) {
-      const x = (i * 173 + 41) % DESIGN.width;
-      const y = GROUND_Y + 34 + ((i * 89) % 70);
-      const length = 5 + (i % 4) * 3;
-      texture.moveTo(x, y).lineTo(x - 3, y - length).stroke({
-        width: 1,
-        color: 0x8a6a45,
-        alpha: 0.24,
-      });
-    }
-    for (let i = 0; i < 30; i += 1) {
-      const x = (i * 211 + 70) % DESIGN.width;
-      const y = GROUND_Y + 8 + (i % 3) * 3;
-      const height = 7 + (i % 5) * 2;
-      texture.moveTo(x, y).lineTo(x - 3, y - height).stroke({
-        width: 2,
-        color: 0x3ba55a,
-        alpha: 0.55,
-      });
-      texture.moveTo(x, y).lineTo(x + 3, y - height + 2).stroke({
-        width: 2,
-        color: 0x5cc977,
-        alpha: 0.4,
-      });
-    }
-    layer.addChild(texture);
-  }
-
-  function createForegroundMound() {
-    const layer = new PIXI.Container();
-    scene.addChild(layer);
-
-    const mound = new PIXI.Graphics();
-    mound.poly([
-      -80, DESIGN.height + 20,
-      -80, 660,
-      515, 660,
-      600, 664,
-      690, 700,
-      735, DESIGN.height + 20,
-    ]).fill(0x1c3b24);
-
-    mound.moveTo(-80, 661).lineTo(515, 661).quadraticCurveTo(600, 665, 690, 701).stroke({
-      width: 9,
-      color: 0x3a8f4f,
-      alpha: 0.95,
-    });
-
-    mound.moveTo(-80, 675).lineTo(500, 675).stroke({
-      width: 2,
-      color: 0x63b86f,
-      alpha: 0.22,
-    });
-
-    for (let i = 0; i < 34; i += 1) {
-      const x = -40 + i * 20;
-      const top = 660 + Math.max(0, (x - 500) * 0.12);
-      const blade = 5 + (i % 4) * 3;
-      mound.moveTo(x, top).lineTo(x - 3, top - blade).stroke({
-        width: 2,
-        color: i % 2 ? 0x65cc74 : 0x3da354,
-        alpha: 0.5,
-      });
-    }
-    layer.addChild(mound);
-  }
-
   function createCannon() {
     cannonRoot = new PIXI.Container();
     cannonRoot.position.set(CANNON.baseX, CANNON.baseY);
@@ -422,55 +216,9 @@
     setElevation(CANNON.defaultElevation);
   }
 
-  function drawTargetStand(x, y) {
-    if (!targetStand) return;
-
-    const top = y + TARGET.collisionRadius * 0.74;
-    targetStand.clear();
-
-    targetStand.moveTo(x, top).lineTo(x, GROUND_Y - 7).stroke({
-      width: 11,
-      color: 0x334155,
-    });
-    targetStand.moveTo(x, top).lineTo(x, GROUND_Y - 7).stroke({
-      width: 4,
-      color: 0x64748b,
-      alpha: 0.75,
-    });
-
-    targetStand.moveTo(x - 32, top).lineTo(x + 32, top).stroke({
-      width: 7,
-      color: 0x475569,
-    });
-
-    targetStand.moveTo(x - 30, GROUND_Y - 8).lineTo(x + 30, GROUND_Y - 8).stroke({
-      width: 9,
-      color: 0x1e293b,
-    });
-    targetStand.ellipse(x, GROUND_Y - 2, 42, 11).fill({
-      color: 0x0b1220,
-      alpha: 0.5,
-    });
-  }
-
   function createTarget() {
-    targetStand = new PIXI.Graphics();
-    scene.addChild(targetStand);
-
     targetGroup = new PIXI.Container();
     scene.addChild(targetGroup);
-
-    targetGlow = new PIXI.Graphics();
-    targetGlow.circle(0, 0, TARGET.collisionRadius * 1.36).fill({
-      color: COLORS.gold,
-      alpha: 0.12,
-    });
-    targetGlow.circle(0, 0, TARGET.collisionRadius * 1.18).stroke({
-      width: 2,
-      color: COLORS.gold,
-      alpha: 0.4,
-    });
-    targetGroup.addChild(targetGlow);
 
     targetSprite = new PIXI.Sprite(textures.target);
     targetSprite.anchor.set(0.5);
@@ -479,7 +227,6 @@
 
     const start = pickTargetPosition(null);
     targetGroup.position.set(start.x, start.y);
-    drawTargetStand(start.x, start.y);
 
     targetBody = Matter.Bodies.circle(start.x, start.y, TARGET.collisionRadius, {
       isStatic: true,
@@ -507,7 +254,7 @@
     return candidate;
   }
 
-  function setTargetPosition(x, y, updateStand = true) {
+  function setTargetPosition(x, y) {
     const clampedX = clamp(x, TARGET.minX, TARGET.maxX);
     const clampedY = clamp(y, TARGET.minY, TARGET.maxY);
 
@@ -516,67 +263,37 @@
     if (targetBody) {
       Matter.Body.setPosition(targetBody, { x: clampedX, y: clampedY });
     }
-    if (updateStand) {
-      drawTargetStand(clampedX, clampedY);
-    }
-  }
-
-  function createAimIndicator() {
-    aimGraphics = new PIXI.Graphics();
-    scene.addChild(aimGraphics);
   }
 
   function createUI() {
     uiLayer = new PIXI.Container();
     scene.addChild(uiLayer);
 
-    const panel = (x, y, width, height, accent) => {
-      const graphics = new PIXI.Graphics();
-      graphics.roundRect(x, y, width, height, 17).fill({
-        color: COLORS.panel,
-        alpha: 0.76,
-      });
-      graphics.roundRect(x, y, width, height, 17).stroke({
-        width: 1.5,
-        color: COLORS.cyan,
-        alpha: 0.28,
-      });
-      graphics.roundRect(x + 14, y + 13, 4, height - 26, 2).fill({
-        color: accent,
-        alpha: 0.95,
-      });
-      uiLayer.addChild(graphics);
-    };
-
-    panel(28, 22, 300, 82, COLORS.cyan);
-    panel(346, 22, 240, 82, COLORS.gold);
-    panel(604, 22, 240, 82, COLORS.success);
-
     const labelStyle = {
       size: 13,
       weight: 'bold',
-      color: 0x93c5fd,
+      color: COLORS.cyan,
       letterSpacing: 2,
     };
 
     ui.scoreLabel = makeText('PUNTUACIÓN', labelStyle);
-    ui.scoreLabel.position.set(54, 34);
+    ui.scoreLabel.position.set(32, 24);
     uiLayer.addChild(ui.scoreLabel);
 
     ui.scoreValue = makeText('0', { size: 34, color: COLORS.white, weight: 'bold' });
-    ui.scoreValue.position.set(54, 53);
+    ui.scoreValue.position.set(32, 43);
     uiLayer.addChild(ui.scoreValue);
 
     ui.shotsLabel = makeText('DISPAROS', labelStyle);
-    ui.shotsLabel.position.set(372, 34);
+    ui.shotsLabel.position.set(230, 24);
     uiLayer.addChild(ui.shotsLabel);
 
     ui.shotsValue = makeText('0', { size: 34, color: COLORS.white, weight: 'bold' });
-    ui.shotsValue.position.set(372, 53);
+    ui.shotsValue.position.set(230, 43);
     uiLayer.addChild(ui.shotsValue);
 
     ui.angleLabel = makeText('ÁNGULO', labelStyle);
-    ui.angleLabel.position.set(630, 34);
+    ui.angleLabel.position.set(400, 24);
     uiLayer.addChild(ui.angleLabel);
 
     ui.angleValue = makeText(`${CANNON.defaultElevation}°`, {
@@ -584,40 +301,8 @@
       color: COLORS.success,
       weight: 'bold',
     });
-    ui.angleValue.position.set(630, 53);
+    ui.angleValue.position.set(400, 43);
     uiLayer.addChild(ui.angleValue);
-
-    ui.message = makeText('', {
-      size: 52,
-      color: COLORS.white,
-      weight: 'bold',
-      align: 'center',
-      strokeWidth: 8,
-    });
-    ui.message.anchor.set(0.5);
-    ui.message.position.set(DESIGN.width / 2, 176);
-    ui.message.alpha = 0;
-    uiLayer.addChild(ui.message);
-
-    const helpPanel = new PIXI.Graphics();
-    helpPanel.roundRect(218, 735, 764, 50, 22).fill({
-      color: COLORS.panel,
-      alpha: 0.72,
-    });
-    helpPanel.roundRect(218, 735, 764, 50, 22).stroke({
-      width: 1.2,
-      color: COLORS.cyan,
-      alpha: 0.22,
-    });
-    uiLayer.addChild(helpPanel);
-
-    ui.help = makeText(
-      'Mueve el ratón para apuntar  ·  Clic / Espacio para disparar\n← → ajustan el ángulo  ·  R reinicia la partida',
-      { size: 15, color: 0xcbd5e1, weight: 'bold', align: 'center', lineHeight: 21 },
-    );
-    ui.help.anchor.set(0.5);
-    ui.help.position.set(DESIGN.width / 2, 760);
-    uiLayer.addChild(ui.help);
   }
 
   function getPivotWorld() {
@@ -675,7 +360,6 @@
 
     state.pointer.x = point.x;
     state.pointer.y = point.y;
-    state.pointerActive = true;
     setElevation(elevation);
   }
 
@@ -685,110 +369,6 @@
     ui.scoreValue.text = String(state.score);
     ui.shotsValue.text = String(state.shots);
     ui.angleValue.text = `${Math.round(state.elevation)}°`;
-  }
-
-  function showMessage(text, color = COLORS.gold) {
-    if (!ui.message) return;
-
-    ui.message.text = text;
-    ui.message.tint = color;
-    ui.message.alpha = 1;
-    ui.message.position.set(DESIGN.width / 2, 176);
-    ui.message.scale.set(1);
-    state.messageTime = 1.75;
-  }
-
-  function spawnParticles(x, y, color, count, options = {}) {
-    if (!particleLayer) return;
-
-    const {
-      minSpeed = 70,
-      maxSpeed = 310,
-      minSize = 2,
-      maxSize = 6,
-      gravity = 620,
-      minLife = 0.35,
-      maxLife = 0.9,
-    } = options;
-
-    for (let i = 0; i < count; i += 1) {
-      const angle = rand(0, Math.PI * 2);
-      const speed = rand(minSpeed, maxSpeed);
-      const size = rand(minSize, maxSize);
-      const life = rand(minLife, maxLife);
-      const graphics = new PIXI.Graphics();
-      graphics.circle(0, 0, size).fill({ color, alpha: 1 });
-      graphics.position.set(x, y);
-      particleLayer.addChild(graphics);
-
-      state.particles.push({
-        graphics,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - (options.upBias || 0),
-        gravity,
-        life,
-        maxLife: life,
-        size,
-      });
-    }
-  }
-
-  function spawnMuzzleFlash(muzzle, angle) {
-    const dirX = Math.cos(angle);
-    const dirY = Math.sin(angle);
-
-    spawnParticles(muzzle.x + dirX * 12, muzzle.y + dirY * 12, 0xffb347, 9, {
-      minSpeed: 30,
-      maxSpeed: 150,
-      minSize: 1.5,
-      maxSize: 4.5,
-      gravity: 250,
-      minLife: 0.18,
-      maxLife: 0.4,
-    });
-    spawnParticles(muzzle.x + dirX * 18, muzzle.y + dirY * 18, 0xef4444, 5, {
-      minSpeed: 20,
-      maxSpeed: 90,
-      minSize: 1,
-      maxSize: 3,
-      gravity: 300,
-      minLife: 0.16,
-      maxLife: 0.3,
-    });
-  }
-
-  function spawnTargetHit(x, y) {
-    spawnParticles(x, y, 0xef4444, 18, {
-      minSpeed: 120,
-      maxSpeed: 360,
-      minSize: 2,
-      maxSize: 6,
-      gravity: 650,
-      minLife: 0.45,
-      maxLife: 1.05,
-    });
-    spawnParticles(x, y, 0xfbbf24, 8, {
-      minSpeed: 90,
-      maxSpeed: 260,
-      minSize: 1.5,
-      maxSize: 4,
-      gravity: 500,
-      minLife: 0.35,
-      maxLife: 0.75,
-    });
-  }
-
-  function spawnGroundHit(x, y) {
-    spawnParticles(x, y, 0xef4444, 13, {
-      minSpeed: 80,
-      maxSpeed: 260,
-      minSize: 2,
-      maxSize: 5,
-      gravity: 700,
-      minLife: 0.3,
-      maxLife: 0.75,
-      upBias: 90,
-    });
   }
 
   function createTomato(angle, muzzle) {
@@ -847,7 +427,6 @@
     state.projectiles.push(actor);
     state.shots += 1;
     updateUI();
-    spawnMuzzleFlash(muzzle, angle);
   }
 
   function queueProjectileRemoval(actor) {
@@ -914,40 +493,22 @@
     const ratio = offset / TARGET.collisionRadius;
 
     let points = 50;
-    let message = '¡ROCE! +50';
-    let color = COLORS.cyan;
 
     if (ratio <= 0.35) {
       points = 150;
-      message = '¡CENTRO! +150';
-      color = COLORS.gold;
     } else if (ratio <= 0.7) {
       points = 100;
-      message = '¡DIANA! +100';
-      color = COLORS.success;
     }
 
     state.score += points;
     state.targetFlash = 1;
     state.targetPulse = 1;
     state.targetRespawnAt = currentTime() + TARGET.respawnDelay;
-
-    spawnTargetHit(hitPoint.x, hitPoint.y);
-    showMessage(message, color);
     queueProjectileRemoval(actor);
   }
 
   function handleGroundHit(actor) {
-    const x = clamp(actor.body.position.x, 20, DESIGN.width - 20);
-    const y = Math.min(actor.body.position.y, GROUND_Y - 3);
-    spawnGroundHit(x, y);
     queueProjectileRemoval(actor);
-
-    const now = currentTime();
-    if (now >= state.nextMissMessage && state.messageTime <= 0.15) {
-      showMessage('¡FALLO!', COLORS.danger);
-      state.nextMissMessage = now + 900;
-    }
   }
 
   function updatePhysics(deltaMS) {
@@ -988,27 +549,6 @@
     }
   }
 
-  function updateParticles(deltaSeconds) {
-    for (let i = state.particles.length - 1; i >= 0; i -= 1) {
-      const particle = state.particles[i];
-      particle.life -= deltaSeconds;
-
-      if (particle.life <= 0) {
-        if (particle.graphics.parent) {
-          particle.graphics.parent.removeChild(particle.graphics);
-        }
-        particle.graphics.destroy();
-        state.particles.splice(i, 1);
-        continue;
-      }
-
-      particle.vy += particle.gravity * deltaSeconds;
-      particle.graphics.x += particle.vx * deltaSeconds;
-      particle.graphics.y += particle.vy * deltaSeconds;
-      particle.graphics.alpha = clamp(particle.life / particle.maxLife, 0, 1);
-    }
-  }
-
   function updateTarget(deltaSeconds) {
     if (!targetGroup) return;
 
@@ -1045,105 +585,11 @@
 
     targetSprite.tint = state.targetFlash > 0 ? 0xffb4b4 : 0xffffff;
     targetGroup.scale.set(1 + state.targetPulse * 0.09);
-    targetGlow.alpha = 0.78 + Math.sin(state.elapsed * 3.2) * 0.18 + state.targetPulse * 0.4;
-  }
-
-  function updateMessage(deltaSeconds) {
-    if (!ui.message || state.messageTime <= 0) return;
-
-    state.messageTime -= deltaSeconds;
-    const remaining = Math.max(0, state.messageTime);
-
-    ui.message.alpha = Math.min(1, remaining / 0.4);
-    ui.message.y = 176 - (1.75 - remaining) * 17;
-    ui.message.scale.set(1 + Math.max(0, remaining - 1.35) * 0.1);
-  }
-
-  function updateAimIndicator() {
-    if (!aimGraphics) return;
-    aimGraphics.clear();
-    if (!state.ready) return;
-
-    const muzzle = getMuzzleWorld();
-    const angle = getBoreAngle();
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-
-    const lineLength = 150;
-    const dashLength = 11;
-    const gapLength = 8;
-
-    for (let offset = 0; offset < lineLength; offset += dashLength + gapLength) {
-      const end = Math.min(offset + dashLength, lineLength);
-      aimGraphics
-        .moveTo(muzzle.x + cos * offset, muzzle.y + sin * offset)
-        .lineTo(muzzle.x + cos * end, muzzle.y + sin * end)
-        .stroke({ width: 3, color: COLORS.white, alpha: 0.34 });
-    }
-
-    const arrowX = muzzle.x + cos * lineLength;
-    const arrowY = muzzle.y + sin * lineLength;
-    const wing = 10;
-    aimGraphics
-      .moveTo(arrowX, arrowY)
-      .lineTo(arrowX - cos * wing - sin * wing * 0.65, arrowY - sin * wing + cos * wing * 0.65)
-      .stroke({ width: 2.5, color: COLORS.gold, alpha: 0.85 });
-    aimGraphics
-      .moveTo(arrowX, arrowY)
-      .lineTo(arrowX - cos * wing + sin * wing * 0.65, arrowY - sin * wing - cos * wing * 0.65)
-      .stroke({ width: 2.5, color: COLORS.gold, alpha: 0.85 });
-
-    const vx = cos * PROJECTILE.speed;
-    const vy = sin * PROJECTILE.speed;
-    for (let tick = 8; tick <= 48; tick += 8) {
-      const x = muzzle.x + vx * tick;
-      const y = muzzle.y + vy * tick + 0.5 * GRAVITY_PER_STEP * tick * tick;
-      if (x < 0 || x > DESIGN.width || y > GROUND_Y || y < 0) break;
-      aimGraphics.circle(x, y, 1.9).fill({
-        color: COLORS.white,
-        alpha: 0.2,
-      });
-    }
-
-    if (state.pointerActive) {
-      const { x, y } = state.pointer;
-      aimGraphics.circle(x, y, 15).stroke({
-        width: 2,
-        color: COLORS.cyan,
-        alpha: 0.92,
-      });
-      aimGraphics.moveTo(x - 23, y).lineTo(x - 8, y).stroke({
-        width: 2,
-        color: COLORS.cyan,
-        alpha: 0.82,
-      });
-      aimGraphics.moveTo(x + 8, y).lineTo(x + 23, y).stroke({
-        width: 2,
-        color: COLORS.cyan,
-        alpha: 0.82,
-      });
-      aimGraphics.moveTo(x, y - 23).lineTo(x, y - 8).stroke({
-        width: 2,
-        color: COLORS.cyan,
-        alpha: 0.82,
-      });
-      aimGraphics.moveTo(x, y + 8).lineTo(x, y + 23).stroke({
-        width: 2,
-        color: COLORS.cyan,
-        alpha: 0.82,
-      });
-      aimGraphics.circle(x, y, 2.6).fill({ color: COLORS.cyan, alpha: 1 });
-    }
   }
 
   function updateVisuals(deltaSeconds) {
-    state.elapsed += deltaSeconds;
-
     updateProjectiles(deltaSeconds);
-    updateParticles(deltaSeconds);
     updateTarget(deltaSeconds);
-    updateMessage(deltaSeconds);
-    updateAimIndicator();
   }
 
   function tick(ticker) {
@@ -1215,12 +661,6 @@
       state.touchAiming = false;
     };
 
-    const onPointerLeave = () => {
-      if (state.pointerActive) {
-        state.pointerActive = false;
-      }
-    };
-
     const onContextMenu = (event) => event.preventDefault();
 
     const onKeyDown = (event) => {
@@ -1245,7 +685,6 @@
     canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
     canvas.addEventListener('pointerup', onPointerUp, { passive: false });
     canvas.addEventListener('pointercancel', onPointerCancel);
-    canvas.addEventListener('pointerleave', onPointerLeave);
     canvas.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('keydown', onKeyDown);
 
@@ -1254,7 +693,6 @@
       onPointerDown,
       onPointerUp,
       onPointerCancel,
-      onPointerLeave,
       onContextMenu,
     };
     keyHandler = onKeyDown;
@@ -1266,15 +704,6 @@
     }
     state.projectiles.length = 0;
     state.pendingRemovals.length = 0;
-
-    for (const particle of state.particles) {
-      if (particle.graphics.parent) {
-        particle.graphics.parent.removeChild(particle.graphics);
-      }
-      particle.graphics.destroy();
-    }
-    state.particles.length = 0;
-
     state.score = 0;
     state.shots = 0;
     state.acc = 0;
@@ -1283,10 +712,7 @@
     state.targetMove = null;
     state.targetFlash = 0;
     state.targetPulse = 0;
-    state.messageTime = 0;
-    state.nextMissMessage = 0;
 
-    if (ui.message) ui.message.alpha = 0;
     if (targetSprite) {
       targetSprite.tint = 0xffffff;
     }
@@ -1299,7 +725,6 @@
     setTargetPosition(next.x, next.y);
     setElevation(CANNON.defaultElevation);
     updateUI();
-    showMessage('¡NUEVA PARTIDA!', COLORS.cyan);
   }
 
   function resizeScene() {
@@ -1395,7 +820,7 @@
       await app.init({
         resizeTo: window,
         antialias: true,
-        backgroundColor: 0x050b14,
+        backgroundAlpha: 0,
         resolution: Math.min(window.devicePixelRatio || 1, 2),
         autoDensity: true,
         powerPreference: 'high-performance',
@@ -1413,19 +838,12 @@
 
       textures = await loadAssets();
       createPhysics();
-      createBackground();
-      createGround();
       createTarget();
       createCannon();
-      createForegroundMound();
 
       projectileLayer = new PIXI.Container();
       scene.addChild(projectileLayer);
 
-      particleLayer = new PIXI.Container();
-      scene.addChild(particleLayer);
-
-      createAimIndicator();
       createUI();
 
       bindInput();
@@ -1438,7 +856,6 @@
       state.ready = true;
       document.body.dataset.tomatoGame = 'ready';
       exposeDebugApi();
-      showMessage('¡APUNTA Y DISPARA!', COLORS.cyan);
 
       window.addEventListener('pagehide', cleanup, { once: true });
       console.log('Cañón lanzatomates listo. PixiJS', PIXI.VERSION, '· Matter.js', Matter.version);
